@@ -1641,3 +1641,26 @@ p {
 #movieDetailsModal .modal-body .alert {
     color: #212529;
 }
+
+
+/* CineReserve navbar logout visibility fix */
+#crNavLogout {
+    color: #f8fafc !important;
+    background: #263244;
+    border: 1px solid #64748b;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#crNavLogout:hover {
+    color: #ffffff !important;
+    background: #b91c1c;
+    border-color: #ef4444;
+}
+
+#crNavLogout:focus-visible {
+    outline: 2px solid #fbbf24;
+    outline-offset: 3px;
+}

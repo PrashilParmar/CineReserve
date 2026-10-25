@@ -74,7 +74,7 @@ async function openShowsForMovie(movie) {
     modal.show();
 
     try {
-        const response = await fetch("http://localhost:8081/api/shows");
+        const response = await fetch("http://127.0.0.1:8081/api/shows");
 
         if (!response.ok) {
             throw new Error("Shows API returned HTTP " + response.status);
@@ -155,53 +155,126 @@ async function openShowsForMovie(movie) {
                 `;
 
                 try {
-                    const seatResponse = await fetch(
-                        `http://localhost:8081/api/seats?showId=${encodeURIComponent(show.showId)}`
-                    );
+                    const [seatResponse, authResponse] = await Promise.all([
+                        fetch(`http://127.0.0.1:8081/api/seats?showId=${encodeURIComponent(show.showId)}`, {
+                            credentials: "include"
+                        }),
+                        fetch("http://127.0.0.1:8081/api/auth/me", {
+                            credentials: "include"
+                        })
+                    ]);
 
                     if (!seatResponse.ok) {
                         throw new Error("Seats API returned HTTP " + seatResponse.status);
                     }
 
                     const seats = await seatResponse.json();
+                    let currentUser = null;
+
+                    if (authResponse.ok) {
+                        currentUser = await authResponse.json();
+                    }
 
                     seatArea.innerHTML = `
                         <hr class="border-secondary my-4">
                         <h3 class="h5 mb-2">Seat availability</h3>
                         <p class="text-secondary small mb-3">
-                            Green = available · Red = booked
+                            Green = available · Red = booked · Gold = selected
                         </p>
-                        <div class="cr-seat-grid mb-4" id="crSeatGrid"></div>
+                        <div class="cr-seat-grid mb-3" id="crSeatGrid"></div>
+                        <p class="small text-secondary mb-3" id="crSeatMessage">
+                            ${currentUser ? `Logged in as ${currentUser.fullName || currentUser.email}. Select an available seat.` : "Please log in before booking."}
+                        </p>
                         <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
-                            <div class="small text-secondary">
-                                Booking requires you to log in.
-                            </div>
-                            <button type="button" class="cr-book-button" id="crLoginToBook">
-                                <i class="bi bi-person-lock me-1"></i> Login to Book
+                            <div class="small cr-gold-text" id="crSeatTotal">No seat selected</div>
+                            <button type="button" class="cr-book-button" id="crConfirmBooking"
+                                ${currentUser ? "disabled" : ""}>
+                                ${currentUser ? "Confirm Booking" : "Login to Book"}
                             </button>
                         </div>
                     `;
 
                     const seatGrid = document.getElementById("crSeatGrid");
+                    const message = document.getElementById("crSeatMessage");
+                    const total = document.getElementById("crSeatTotal");
+                    const bookButton = document.getElementById("crConfirmBooking");
+                    let selectedSeat = null;
 
                     seats.forEach(seat => {
-                        const seatElement = document.createElement("div");
-                        const isAvailable = String(seat.status).toUpperCase() === "AVAILABLE";
+                        const available = String(seat.status).toUpperCase() === "AVAILABLE";
+                        const seatElement = document.createElement("button");
+                        seatElement.type = "button";
                         seatElement.className = "cr-seat " +
-                            (isAvailable ? "cr-seat-available" : "cr-seat-booked");
+                            (available ? "cr-seat-available" : "cr-seat-booked");
                         seatElement.textContent = `${seat.row}${seat.number}`;
                         seatElement.title = `${seat.type} · ₹${seat.price} · ${seat.status}`;
+                        seatElement.disabled = !available || !currentUser;
+                        seatElement.style.cursor = seatElement.disabled ? "not-allowed" : "pointer";
+
+                        seatElement.addEventListener("click", () => {
+                            if (!currentUser || !available) return;
+
+                            selectedSeat = seat;
+
+                            seatGrid.querySelectorAll(".cr-seat").forEach(element => {
+                                element.style.outline = "";
+                            });
+
+                            seatElement.style.outline = "2px solid #d4af37";
+                            total.textContent = `Selected: ${seat.row}${seat.number} · ₹${seat.price}`;
+                            bookButton.disabled = false;
+                            message.textContent = "Seat selected. Confirm to complete your demo booking.";
+                        });
+
                         seatGrid.appendChild(seatElement);
                     });
 
-                    document.getElementById("crLoginToBook").addEventListener("click", () => {
-                        modal.hide();
+                    bookButton.addEventListener("click", async () => {
+                        if (!currentUser) {
+                            modal.hide();
+                            document.getElementById("login")?.scrollIntoView({ behavior: "smooth" });
+                            return;
+                        }
 
-                        const loginSection = document.getElementById("login");
-                        if (loginSection) {
-                            loginSection.scrollIntoView({ behavior: "smooth" });
-                        } else {
-                            window.alert("Please log in to continue booking.");
+                        if (!selectedSeat) {
+                            message.textContent = "Please select an available seat first.";
+                            return;
+                        }
+
+                        bookButton.disabled = true;
+                        bookButton.textContent = "Processing...";
+                        message.textContent = "Creating your booking...";
+
+                        try {
+                            const response = await fetch("http://127.0.0.1:8081/api/bookings", {
+                                method: "POST",
+                                credentials: "include",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    showId: Number(show.showId),
+                                    showSeatId: Number(selectedSeat.showSeatId)
+                                })
+                            });
+
+                            const result = await response.json();
+
+                            if (!response.ok) {
+                                throw new Error(result.error || result.message || `Booking failed (HTTP ${response.status})`);
+                            }
+
+                            message.textContent = `Booking confirmed! Booking ID: ${result.bookingId}`;
+                            total.textContent = `Paid: ₹${result.amount}`;
+                            bookButton.textContent = "Booking Confirmed";
+
+                            window.alert(
+                                `Booking Confirmed!\n\nBooking ID: ${result.bookingId}\nTicket ID: ${result.ticketId}\nAmount: ₹${result.amount}\nPayment: ${result.paymentStatus}\n\nDemo payment only.`
+                            );
+
+                            choose.click();
+                        } catch (error) {
+                            message.textContent = error.message;
+                            bookButton.disabled = false;
+                            bookButton.textContent = "Retry Booking";
                         }
                     });
 
@@ -209,7 +282,7 @@ async function openShowsForMovie(movie) {
                     console.error("Seat loading failed:", error);
                     seatArea.innerHTML = `
                         <div class="alert alert-danger">
-                            Unable to load seats. Please check that the backend is running.
+                            Unable to load seats: ${error.message}
                         </div>
                     `;
                 }
@@ -251,7 +324,7 @@ async function loadMovies() {
 
     try {
         const response = await fetch(
-            "http://localhost:8081/api/movies"
+            "http://127.0.0.1:8081/api/movies"
         );
 
         if (!response.ok) {
@@ -469,7 +542,7 @@ loadMovies();
    Connects existing Login and Register forms to the API
    ===================================================== */
 
-const CR_AUTH_API = "http://localhost:8081/api/auth";
+const CR_AUTH_API = "http://127.0.0.1:8081/api/auth";
 
 async function crAuthRequest(endpoint, data = null) {
     const options = {
@@ -499,6 +572,63 @@ async function crAuthRequest(endpoint, data = null) {
     return result;
 }
 
+let crCurrentUser = null;
+
+function crRenderAccount(user) {
+    crCurrentUser = user || null;
+
+    const loginLink = document.getElementById("crNavLogin");
+    const registerLink = document.getElementById("crNavRegister");
+    const userArea = document.getElementById("crNavUser");
+    const userName = document.getElementById("crNavUserName");
+
+    if (!loginLink || !registerLink || !userArea || !userName) return;
+
+    if (crCurrentUser) {
+        loginLink.hidden = true;
+        registerLink.hidden = true;
+        userArea.hidden = false;
+        userName.textContent = crCurrentUser.fullName || crCurrentUser.email || "Account";
+    } else {
+        loginLink.hidden = false;
+        registerLink.hidden = false;
+        userArea.hidden = true;
+        userName.textContent = "";
+    }
+}
+
+async function crRefreshAccount() {
+    try {
+        const user = await crAuthRequest("me");
+        crRenderAccount(user);
+        return user;
+    } catch {
+        crRenderAccount(null);
+        return null;
+    }
+}
+
+const crLogoutButton = document.getElementById("crNavLogout");
+
+if (crLogoutButton) {
+    crLogoutButton.addEventListener("click", async () => {
+        crLogoutButton.disabled = true;
+
+        try {
+            await crAuthRequest("logout", {});
+            crRenderAccount(null);
+            const message = document.getElementById("loginMessage");
+            crShowAuthMessage(message, "You have logged out successfully.", true);
+        } catch (error) {
+            crShowAuthMessage(
+                document.getElementById("loginMessage"),
+                "Logout failed: " + error.message
+            );
+        } finally {
+            crLogoutButton.disabled = false;
+        }
+    });
+}
 function crShowAuthMessage(element, message, success = false) {
     if (!element) return;
 
@@ -572,13 +702,17 @@ if (crLoginForm) {
                 password
             });
 
+            const user = await crRefreshAccount();
+
             crShowAuthMessage(
                 message,
-                `Welcome, ${result.fullName}! You are logged in.`,
-                true
+                user
+                    ? `Welcome, ${user.fullName || user.email}! You are logged in.`
+                    : "Login succeeded, but the session could not be restored.",
+                Boolean(user)
             );
 
-            crLoginForm.reset();
+            if (user) crLoginForm.reset();
         } catch (error) {
             crShowAuthMessage(message, error.message);
         } finally {
@@ -589,11 +723,11 @@ if (crLoginForm) {
 
 /* Restore the existing login session when the page opens. */
 document.addEventListener("DOMContentLoaded", async function () {
-    try {
-        const user = await crAuthRequest("me");
-        console.log("CineReserve session active:", user.fullName);
-    } catch (error) {
-        // A logged-out user is normal; no action is required.
-    }
+    const user = await crRefreshAccount();
+    if (user) console.log("CineReserve session active:", user.fullName || user.email);
 });
+
+
+
+
 

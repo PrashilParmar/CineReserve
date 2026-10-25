@@ -50,12 +50,15 @@
                 <a class="cr-nav-link" href="#theatres">Theatres</a>
                 <a class="cr-nav-link" href="#bookings">My Bookings</a>
 
-                <div class="cr-nav-actions">
-                    <a href="#login" class="cr-login-link">Login</a>
-                    <a href="#register" class="cr-btn cr-btn-primary cr-nav-register">
-                        Register
-                    </a>
-                </div>
+                <div class="cr-nav-actions" id="crNavAccount">
+    <a href="#login" class="cr-login-link" id="crNavLogin">Login</a>
+    <a href="#register" class="cr-btn cr-btn-primary cr-nav-register" id="crNavRegister">Register</a>
+    <div id="crNavUser" class="cr-account-display" hidden>
+        <span class="cr-account-status">Logged in</span>
+        <span id="crNavUserName"></span>
+        <button type="button" class="cr-login-link" id="crNavLogout">Logout</button>
+    </div>
+</div>
             </div>
 
         </div>
@@ -463,3 +466,4 @@
 
 </body>
 </html>
+
